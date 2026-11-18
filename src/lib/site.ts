@@ -6,8 +6,8 @@ export const site = {
   description:
     "Watch your one-page business website get designed in about 15 minutes, live on stream or privately. Love it? Keep it for $300. Not for you? You owe nothing.",
   socials: [
-    { label: "TikTok", href: "https://www.tiktok.com/@brandvisionpros" },
-    { label: "Instagram", href: "https://www.instagram.com/brandvisionpros" },
+    { label: "TikTok", href: "https://www.tiktok.com/@traefirstclass_" },
+    { label: "Instagram", href: "https://www.instagram.com/traefirstclass_productions" },
   ],
   price: {
     keep: "$300",
