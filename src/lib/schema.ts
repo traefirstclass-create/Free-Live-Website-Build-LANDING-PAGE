@@ -118,8 +118,9 @@ export const applicationShape = {
   consent_stream: z.boolean(),
   available_dm: z.literal(true, { error: "Please confirm you'll be reachable by DM" }),
 
-  // Honeypot — real people never see or fill this.
-  company_website: z.string().max(0).optional(),
+  // Hidden anti-spam field. Never rejects (browser autofill can fill hidden
+  // fields); the server just flags the application for review.
+  hp_note: z.string().max(500).optional(),
 };
 
 /* Cross-field rules, shared by client (per step) and server (all at once). */

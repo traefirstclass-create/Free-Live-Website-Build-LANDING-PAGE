@@ -29,6 +29,8 @@ export async function POST(req: Request) {
   }
 
   const { status, reasons } = qualify(data);
+  // Hidden field filled = possible bot (or aggressive autofill). Save it, but flag it for review.
+  if (data.hp_note?.trim()) reasons.push("Review: hidden anti-spam field was filled (possible bot)");
   const score = priorityScore(data);
   const inspiration =
     data.inspiration_url && !/^https?:\/\//i.test(data.inspiration_url)

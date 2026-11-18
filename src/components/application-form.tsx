@@ -55,7 +55,7 @@ const stepSchemas = [
     phone: s.phone,
     social_handle: s.social_handle,
     build_format: s.build_format,
-    company_website: s.company_website,
+    hp_note: s.hp_note,
   }),
   z.object({
     business_description: s.business_description,
@@ -147,7 +147,7 @@ export function ApplicationForm() {
       consent_stream: false,
       logo: [],
       photos: [],
-      company_website: "",
+      hp_note: "",
     },
   });
 
@@ -274,8 +274,8 @@ export function ApplicationForm() {
         {/* Honeypot (hidden from people and screen readers) */}
         <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
           <label>
-            Company website
-            <input type="text" tabIndex={-1} autoComplete="off" {...register("company_website")} />
+            Leave this blank
+            <input type="text" tabIndex={-1} autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" {...register("hp_note")} />
           </label>
         </div>
 
