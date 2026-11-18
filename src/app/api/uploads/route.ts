@@ -1,40 +1,35 @@
 import { NextResponse } from "next/server";
-import { uploadRequestSchema } from "@/lib/schema";
-import { ASSET_BUCKET, supabaseAdmin } from "@/lib/supabase/server";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { ALLOWED_IMAGE_TYPES, ASSET_PATH_RE, MAX_FILE_BYTES } from "@/lib/schema";
 
 /**
- * Step 1 of submit: the browser sends file metadata (not the files), we validate it
- * and return one signed upload URL per file. The browser then uploads straight to
- * Supabase Storage, bypassing Vercel's 4.5MB function body limit.
+ * Issues short-lived client tokens so the browser can upload each image straight
+ * to Vercel Blob (bypassing the 4.5MB function body limit). The stored files are
+ * permanent; only this one-time upload permission expires.
  */
-export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  const parsed = uploadRequestSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid files" },
-      { status: 400 },
-    );
-  }
-
-  const submissionId = crypto.randomUUID();
-  const supabase = supabaseAdmin();
-  let photoIndex = 0;
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => null)) as HandleUploadBody | null;
+  if (!body) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
   try {
-    const uploads = await Promise.all(
-      parsed.data.files.map(async (file) => {
-        const ext = (file.name.split(".").pop() ?? "img").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "img";
-        const base = file.kind === "logo" ? "logo" : `photo-${++photoIndex}`;
-        const path = `${submissionId}/${base}.${ext}`;
-        const { data, error } = await supabase.storage.from(ASSET_BUCKET).createSignedUploadUrl(path);
-        if (error || !data) throw error ?? new Error("No signed URL");
-        return { kind: file.kind, name: file.name, path: data.path, token: data.token };
-      }),
-    );
-    return NextResponse.json({ submissionId, uploads });
+    const result = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (pathname) => {
+        if (!ASSET_PATH_RE.test(pathname)) throw new Error("Invalid upload path");
+        return {
+          allowedContentTypes: [...ALLOWED_IMAGE_TYPES],
+          maximumSizeInBytes: MAX_FILE_BYTES,
+          addRandomSuffix: false,
+          allowOverwrite: false,
+          validUntil: Date.now() + 10 * 60 * 1000,
+        };
+      },
+    });
+    return NextResponse.json(result);
   } catch (err) {
     console.error("[uploads]", err);
-    return NextResponse.json({ error: "Could not prepare uploads. Please try again." }, { status: 500 });
+    const message = err instanceof Error && err.message === "Invalid upload path" ? err.message : "Could not prepare upload";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

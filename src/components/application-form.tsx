@@ -20,12 +20,12 @@ import {
   WEBSITE_LABELS,
   WEBSITE_STATUS,
   applicationShape as s,
+  assetPath,
   refineColors,
   refineConsent,
   type BuildFormat,
 } from "@/lib/schema";
-import { ASSET_BUCKET_PUBLIC } from "@/lib/constants";
-import { supabaseBrowser } from "@/lib/supabase/browser";
+import { upload } from "@vercel/blob/client";
 
 /* ------------------------------------------------------------------ */
 /* Client-side schemas (one per step, so each step validates alone)    */
@@ -176,39 +176,28 @@ export function ApplicationForm() {
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
-      // 1) Ask the server for signed upload URLs.
+      // 1) Upload each image straight to Vercel Blob (permanent, private storage).
       setPhase("uploading");
+      const submissionId = crypto.randomUUID();
       const files = [
-        ...values.logo.map((f) => ({ kind: "logo" as const, file: f })),
-        ...values.photos.map((f) => ({ kind: "photo" as const, file: f })),
+        ...values.logo.map((f) => ({ file: f, path: assetPath(submissionId, "logo", f.name) })),
+        ...values.photos.map((f, i) => ({ file: f, path: assetPath(submissionId, `photo-${i + 1}`, f.name) })),
       ];
-      const prep = await fetch("/api/uploads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: files.map(({ kind, file }) => ({ kind, name: file.name, type: fileType(file), size: file.size })),
-        }),
-      });
-      const prepJson = await prep.json();
-      if (!prep.ok) throw new Error(prepJson.error ?? "Could not prepare uploads");
-      const { submissionId, uploads } = prepJson as {
-        submissionId: string;
-        uploads: { kind: "logo" | "photo"; path: string; token: string }[];
-      };
-
-      // 2) Upload each file directly to Supabase Storage.
-      const storage = supabaseBrowser().storage.from(ASSET_BUCKET_PUBLIC);
       await Promise.all(
-        uploads.map(async (u, i) => {
-          const file = files[i].file;
-          const { error } = await storage.uploadToSignedUrl(u.path, u.token, file, {
-            contentType: fileType(file),
-          });
-          if (error) throw new Error(`Upload failed for ${file.name}. Please try again.`);
+        files.map(async ({ file, path }) => {
+          try {
+            await upload(path, file, {
+              access: "private",
+              handleUploadUrl: "/api/uploads",
+              contentType: fileType(file),
+            });
+          } catch {
+            throw new Error(`Upload failed for ${file.name}. Please try again.`);
+          }
         }),
       );
 
-      // 3) Save the application.
+      // 2) Save the application.
       setPhase("saving");
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { logo, photos, ...fields } = values;
@@ -218,8 +207,8 @@ export function ApplicationForm() {
         body: JSON.stringify({
           ...fields,
           submission_id: submissionId,
-          logo_path: uploads.find((u) => u.kind === "logo")!.path,
-          photo_paths: uploads.filter((u) => u.kind === "photo").map((u) => u.path),
+          logo_path: files[0].path,
+          photo_paths: files.slice(1).map((f) => f.path),
         }),
       });
       const json = await res.json();

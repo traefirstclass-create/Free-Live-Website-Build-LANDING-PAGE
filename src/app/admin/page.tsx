@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { isAdmin } from "@/lib/admin-auth";
-import { ASSET_BUCKET, supabaseAdmin, type ApplicationRow } from "@/lib/supabase/server";
+import { db, type ApplicationRow } from "@/lib/db";
 import {
   BUILD_FORMAT_LABELS,
   PRIMARY_ACTION_LABELS,
@@ -82,25 +82,25 @@ async function Dashboard({ sp }: { sp: SP }) {
   const format = FORMAT_FILTERS.find((v) => v === one(sp.format)) ?? "all";
   const sort = one(sp.sort) === "newest" ? "newest" : "priority";
 
-  const supabase = supabaseAdmin();
-  let q = supabase.from("applications").select("*").limit(500);
-  if (status !== "all") q = q.eq("status", status);
-  if (format !== "all") q = q.eq("build_format", format);
-  q =
-    sort === "priority"
-      ? q.order("priority_score", { ascending: false }).order("created_at", { ascending: false })
-      : q.order("created_at", { ascending: false });
+  const where: string[] = [];
+  const params: string[] = [];
+  if (status !== "all") where.push(`status = $${params.push(status)}`);
+  if (format !== "all") where.push(`build_format = $${params.push(format)}`);
+  const order = sort === "priority" ? "priority_score desc, created_at desc" : "created_at desc";
 
-  const { data, error } = await q;
-  const rows = (data ?? []) as ApplicationRow[];
-
-  // Signed thumbnail URLs (bucket is private), valid 1 hour.
-  const paths = rows.flatMap((r) => [r.logo_path, ...(r.photo_paths ?? [])]).filter(Boolean) as string[];
-  const urlByPath = new Map<string, string>();
-  if (paths.length) {
-    const { data: signed } = await supabase.storage.from(ASSET_BUCKET).createSignedUrls(paths, 3600);
-    signed?.forEach((s) => s.path && s.signedUrl && urlByPath.set(s.path, s.signedUrl));
+  let rows: ApplicationRow[] = [];
+  let error: { message: string } | null = null;
+  try {
+    rows = (await db().query(
+      `select * from applications ${where.length ? `where ${where.join(" and ")}` : ""} order by ${order} limit 500`,
+      params,
+    )) as ApplicationRow[];
+  } catch (err) {
+    error = { message: err instanceof Error ? err.message : "Database error" };
   }
+
+  // Images are private in Blob; served to signed-in admins through a permanent route.
+  const imageUrl = (path: string) => `/api/admin/asset?path=${encodeURIComponent(path)}`;
 
   const counts = {
     total: rows.length,
@@ -230,9 +230,9 @@ async function Dashboard({ sp }: { sp: SP }) {
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex max-w-[260px] flex-wrap gap-1.5">
-                    {[r.logo_path, ...(r.photo_paths ?? [])].filter(Boolean).map((p, i) => {
-                      const url = urlByPath.get(p!);
-                      return url ? (
+                    {([r.logo_path, ...(r.photo_paths ?? [])].filter(Boolean) as string[]).map((p, i) => {
+                      const url = imageUrl(p);
+                      return (
                         <a key={p} href={url} target="_blank" rel="noopener noreferrer" className="block">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -242,7 +242,7 @@ async function Dashboard({ sp }: { sp: SP }) {
                             loading="lazy"
                           />
                         </a>
-                      ) : null;
+                      );
                     })}
                   </div>
                 </td>

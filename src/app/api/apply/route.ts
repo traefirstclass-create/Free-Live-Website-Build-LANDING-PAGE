@@ -1,7 +1,8 @@
 import { after, NextResponse } from "next/server";
+import { head } from "@vercel/blob";
 import { submissionSchema } from "@/lib/schema";
 import { priorityScore, qualify } from "@/lib/qualification";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import { db } from "@/lib/db";
 import { sendApplicationEmail } from "@/lib/email";
 
 export async function POST(req: Request) {
@@ -16,11 +17,15 @@ export async function POST(req: Request) {
   }
   const data = parsed.data;
 
-  // Files must live inside this submission's folder (issued by /api/uploads).
-  const prefix = `${data.submission_id}/`;
+  // Files must belong to this submission and actually exist in Blob.
   const paths = [data.logo_path, ...data.photo_paths];
-  if (!paths.every((p) => p.startsWith(prefix) && !p.includes(".."))) {
+  if (!paths.every((p) => p.split("/")[1] === data.submission_id)) {
     return NextResponse.json({ error: "Invalid file references" }, { status: 400 });
+  }
+  try {
+    await Promise.all(paths.map((p) => head(p)));
+  } catch {
+    return NextResponse.json({ error: "Some images didn't finish uploading. Please try again." }, { status: 400 });
   }
 
   const { status, reasons } = qualify(data);
@@ -30,42 +35,30 @@ export async function POST(req: Request) {
       ? `https://${data.inspiration_url}`
       : data.inspiration_url || null;
 
-  const { error } = await supabaseAdmin()
-    .from("applications")
-    .insert({
-      id: data.submission_id,
-      full_name: data.full_name,
-      business_name: data.business_name,
-      email: data.email.toLowerCase(),
-      phone: data.phone,
-      social_handle: data.social_handle,
-      build_format: data.build_format,
-      business_description: data.business_description,
-      time_operating: data.time_operating,
-      generating_income: data.generating_income === "yes",
-      monthly_revenue: data.monthly_revenue,
-      current_website: data.current_website,
-      logo_path: data.logo_path,
-      photo_paths: data.photo_paths,
-      brand_colors: data.pick_colors_for_me ? null : data.brand_colors,
-      pick_colors_for_me: data.pick_colors_for_me,
-      primary_action: data.primary_action,
-      inspiration_url: inspiration,
-      services: data.services,
-      agree_preview: data.agree_preview,
-      ready_to_invest: data.ready_to_invest,
-      consent_stream: data.build_format === "private" ? false : data.consent_stream,
-      available_dm: data.available_dm,
-      status,
-      disqualify_reasons: reasons,
-      priority_score: score,
-    });
-
-  if (error) {
-    if (error.code === "23505") {
+  try {
+    await db()`
+      insert into applications (
+        id, full_name, business_name, email, phone, social_handle, build_format,
+        business_description, time_operating, generating_income, monthly_revenue, current_website,
+        logo_path, photo_paths, brand_colors, pick_colors_for_me, primary_action, inspiration_url, services,
+        agree_preview, ready_to_invest, consent_stream, available_dm,
+        status, disqualify_reasons, priority_score
+      ) values (
+        ${data.submission_id}, ${data.full_name}, ${data.business_name}, ${data.email.toLowerCase()},
+        ${data.phone}, ${data.social_handle}, ${data.build_format},
+        ${data.business_description}, ${data.time_operating}, ${data.generating_income === "yes"},
+        ${data.monthly_revenue}, ${data.current_website},
+        ${data.logo_path}, ${data.photo_paths}, ${data.pick_colors_for_me ? null : data.brand_colors},
+        ${data.pick_colors_for_me}, ${data.primary_action}, ${inspiration}, ${data.services},
+        ${data.agree_preview}, ${data.ready_to_invest},
+        ${data.build_format === "private" ? false : data.consent_stream}, ${data.available_dm},
+        ${status}, ${reasons}, ${score}
+      )`;
+  } catch (err) {
+    if (typeof err === "object" && err && "code" in err && err.code === "23505") {
       return NextResponse.json({ error: "This application was already submitted." }, { status: 409 });
     }
-    console.error("[apply] insert failed", error);
+    console.error("[apply] insert failed", err);
     return NextResponse.json({ error: "Something went wrong saving your application. Please try again." }, { status: 500 });
   }
 

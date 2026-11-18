@@ -162,29 +162,26 @@ export function refineApplication(
 export const applicationFieldsSchema = z.object(applicationShape).superRefine(refineApplication);
 export type ApplicationFields = z.infer<typeof applicationFieldsSchema>;
 
+/* ------------------------------------------------------------------ */
+/* Blob paths: applications/<submission uuid>/logo.png, photo-1.jpg…   */
+/* ------------------------------------------------------------------ */
+
+export const ASSET_PREFIX = "applications";
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+export const ASSET_PATH_RE = new RegExp(`^${ASSET_PREFIX}/(${UUID})/(logo|photo-[1-${MAX_PHOTOS}])\\.[a-z0-9]{1,5}$`);
+
+export function assetPath(submissionId: string, base: string, fileName: string) {
+  const ext = (fileName.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "img";
+  return `${ASSET_PREFIX}/${submissionId}/${base}.${ext}`;
+}
+
 /** What the browser POSTs to /api/apply after files are uploaded. */
 export const submissionSchema = z
   .object({
     ...applicationShape,
     submission_id: z.uuid(),
-    logo_path: z.string().min(1),
-    photo_paths: z.array(z.string().min(1)).min(MIN_PHOTOS).max(MAX_PHOTOS),
+    logo_path: z.string().regex(ASSET_PATH_RE),
+    photo_paths: z.array(z.string().regex(ASSET_PATH_RE)).min(MIN_PHOTOS).max(MAX_PHOTOS),
   })
   .superRefine(refineApplication);
 export type Submission = z.infer<typeof submissionSchema>;
-
-/** What the browser POSTs to /api/uploads to get signed upload URLs. */
-export const uploadRequestSchema = z.object({
-  files: z
-    .array(
-      z.object({
-        kind: z.enum(["logo", "photo"]),
-        name: z.string().max(200),
-        type: z.enum(ALLOWED_IMAGE_TYPES, { error: "Images only" }),
-        size: z.number().int().positive().max(MAX_FILE_BYTES, "Max 10MB per image"),
-      }),
-    )
-    .min(1 + MIN_PHOTOS)
-    .max(1 + MAX_PHOTOS)
-    .refine((f) => f.filter((x) => x.kind === "logo").length === 1, "Exactly one logo"),
-});

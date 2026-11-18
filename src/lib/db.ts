@@ -1,22 +1,21 @@
 import "server-only";
-import { createClient } from "@supabase/supabase-js";
-import { ASSET_BUCKET_PUBLIC } from "../constants";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
-export const ASSET_BUCKET = ASSET_BUCKET_PUBLIC;
+let _sql: NeonQueryFunction<false, false> | null = null;
 
-/** Service-role client. Server only — bypasses RLS. Never import into client code. */
-export function supabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+/** Neon Postgres client. Lazy so `next build` works before env vars exist. */
+export function db() {
+  if (!_sql) {
+    const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+    if (!url) throw new Error("Missing DATABASE_URL (connect a Neon database in Vercel → Storage)");
+    _sql = neon(url);
   }
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  return _sql;
 }
 
 export type ApplicationRow = {
   id: string;
-  created_at: string;
+  created_at: string | Date;
   full_name: string;
   business_name: string;
   email: string;
@@ -44,6 +43,6 @@ export type ApplicationRow = {
   priority_score: number;
   is_built: boolean;
   is_paid: boolean;
-  built_at: string | null;
-  paid_at: string | null;
+  built_at: string | Date | null;
+  paid_at: string | Date | null;
 };

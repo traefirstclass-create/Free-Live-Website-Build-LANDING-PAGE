@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { ADMIN_COOKIE, isAdmin, passwordMatches, sessionToken } from "@/lib/admin-auth";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import { db } from "@/lib/db";
 
 export async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
@@ -13,14 +13,14 @@ export async function login(formData: FormData) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
-    path: "/admin",
+    path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
   redirect("/admin");
 }
 
 export async function logout() {
-  (await cookies()).delete({ name: ADMIN_COOKIE, path: "/admin" });
+  (await cookies()).delete({ name: ADMIN_COOKIE, path: "/" });
   redirect("/admin");
 }
 
@@ -31,11 +31,14 @@ export async function toggleFlag(formData: FormData) {
   const value = formData.get("value") === "true";
   if (!/^[0-9a-f-]{36}$/i.test(id) || (flag !== "is_built" && flag !== "is_paid")) return;
 
-  const stamp = flag === "is_built" ? "built_at" : "paid_at";
-  const { error } = await supabaseAdmin()
-    .from("applications")
-    .update({ [flag]: value, [stamp]: value ? new Date().toISOString() : null })
-    .eq("id", id);
-  if (error) console.error("[admin] toggle failed", error);
+  try {
+    if (flag === "is_built") {
+      await db()`update applications set is_built = ${value}, built_at = ${value ? new Date() : null} where id = ${id}`;
+    } else {
+      await db()`update applications set is_paid = ${value}, paid_at = ${value ? new Date() : null} where id = ${id}`;
+    }
+  } catch (err) {
+    console.error("[admin] toggle failed", err);
+  }
   revalidatePath("/admin");
 }
