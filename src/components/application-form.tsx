@@ -126,6 +126,7 @@ export function ApplicationForm() {
     handleSubmit,
     trigger,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<FormValues>({
     resolver,
@@ -173,8 +174,10 @@ export function ApplicationForm() {
     if (ok) setStep((n) => Math.min(n + 1, STEPS.length - 1));
   }
 
-  async function onSubmit(values: FormValues) {
+  async function onSubmit() {
     setServerError(null);
+    // The resolver only returns the current step's fields, so read every step's answers.
+    const values = getValues();
     try {
       // 1) Upload each image straight to Vercel Blob (permanent, private storage).
       setPhase("uploading");
@@ -635,15 +638,24 @@ function Checkbox({ children, error, className = "", required, ...props }: Check
   return (
     <div className={className}>
       <label htmlFor={id} className="flex cursor-pointer items-start gap-3 text-base leading-relaxed text-cream">
-        <input
-          id={id}
-          type="checkbox"
-          aria-required={required}
-          aria-invalid={!!error}
-          aria-describedby={error ? `${id}-err` : undefined}
-          className="mt-1 size-5 shrink-0 cursor-pointer appearance-none rounded-md border border-gold-400/60 bg-white/[0.03] bg-center bg-no-repeat transition checked:border-gold-400 checked:bg-gold-400 checked:bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><path d=%22M3.5 8.5l3 3 6-7%22 fill=%22none%22 stroke=%22%23070605%22 stroke-width=%222.2%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>')] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300"
-          {...props}
-        />
+        <span className="relative mt-1 grid size-5 shrink-0 place-items-center">
+          <input
+            id={id}
+            type="checkbox"
+            aria-required={required}
+            aria-invalid={!!error}
+            aria-describedby={error ? `${id}-err` : undefined}
+            className={`peer size-5 cursor-pointer appearance-none rounded-md border bg-white/[0.03] transition checked:border-gold-400 checked:bg-gold-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 ${error ? "border-alert/80" : "border-gold-400/60"}`}
+            {...props}
+          />
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="pointer-events-none absolute size-3.5 text-ink opacity-0 transition-opacity peer-checked:opacity-100"
+          >
+            <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
         <span>
           {children}
           {required && <span className="sr-only"> (required)</span>}
